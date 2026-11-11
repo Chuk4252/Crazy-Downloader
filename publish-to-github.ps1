@@ -10,7 +10,18 @@ $ErrorActionPreference = "Stop"
 Set-Location -Path $PSScriptRoot
 
 if ([string]::IsNullOrWhiteSpace($GitHubToken)) {
-  $GitHubToken = Read-Host "Enter your GitHub Personal Access Token (with repo and workflow permissions)"
+  Write-Host "[Auth] Opening GitHub sign-in via Git Credential Manager (check your browser or sign-in window)..."
+  $gcmInput = "protocol=https`nhost=github.com`n`n"
+  $gcmOutput = $gcmInput | git credential-manager get
+  foreach ($line in ($gcmOutput -split "`r?`n")) {
+    if ($line -match "^password=(.+)$") {
+      $GitHubToken = $Matches[1].Trim()
+    }
+  }
+}
+
+if ([string]::IsNullOrWhiteSpace($GitHubToken)) {
+  throw "GitHub sign-in was canceled or did not return an access token."
 }
 
 $headers = @{
@@ -49,7 +60,6 @@ if ($existingRemote -contains "origin") {
 }
 
 git push -u origin main --force
-# Reset remote URL to clean HTTPS URL without token after push
 git remote set-url origin "https://github.com/${owner}/${RepoName}.git"
 
 Write-Host "[4/4] Enabling GitHub Pages (GitHub Actions workflow deployment)..."
