@@ -30,10 +30,17 @@ $headers = @{
   "User-Agent"    = "Crazy-Downloader-Publisher"
 }
 
-Write-Host "[1/4] Verifying GitHub account..."
-$user = Invoke-RestMethod -Uri "https://api.github.com/user" -Headers $headers -Method Get
+Write-Host "[1/4] Verifying GitHub account and token scopes..."
+$userResp = Invoke-WebRequest -Uri "https://api.github.com/user" -Headers $headers -Method Get -UseBasicParsing
+$scopes = [string]$userResp.Headers["X-OAuth-Scopes"]
+$user = $userResp.Content | ConvertFrom-Json
 $owner = $user.login
-Write-Host "      Authenticated as: $owner"
+Write-Host "      Authenticated as : $owner"
+Write-Host "      Token scopes     : $(if ($scopes) { $scopes } else { '(none)' })"
+
+if ($scopes -notmatch "repo") {
+  throw "This Personal Access Token has no 'repo' scope enabled. On https://github.com/settings/tokens, edit the token, check the 'repo' and 'workflow' boxes, click Update token, and run again."
+}
 
 Write-Host "[2/4] Creating repository '$RepoName' on GitHub..."
 $repoBody = @{
@@ -47,7 +54,13 @@ try {
   $repo = Invoke-RestMethod -Uri "https://api.github.com/user/repos" -Headers $headers -Method Post -Body $repoBody -ContentType "application/json"
   Write-Host "      Created repository: $($repo.html_url)"
 } catch {
-  Write-Host "      Repository '$RepoName' already exists under $owner, continuing..."
+  $checkUrl = "https://api.github.com/repos/$owner/$RepoName"
+  try {
+    $existing = Invoke-RestMethod -Uri $checkUrl -Headers $headers -Method Get
+    Write-Host "      Repository already exists: $($existing.html_url)"
+  } catch {
+    throw "Could not create or access repository '$owner/$RepoName'. Verify token permissions."
+  }
 }
 
 Write-Host "[3/4] Pushing website, Crazy Downloader 2.1.0.exe (Git LFS), and extensions folder to main..."
